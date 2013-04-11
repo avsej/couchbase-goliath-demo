@@ -2,6 +2,7 @@ require 'em-synchrony'
 require 'couchbase'
 require 'goliath'
 require 'grape'
+require 'date'
 
 class Chat < Grape::API
 
@@ -9,14 +10,28 @@ class Chat < Grape::API
 
   resource 'messages' do
     get do
-      env.couchbase.get('foo')
+      view = env.couchbase.design_docs["messages"].all(:include_docs => true)
+      msgs = view.map do |r|
+        {
+          "id" => r.id,
+          "key" => r.key,
+          "value" => r.value,
+          "cas" => r.meta["cas"],
+          # "doc" => r.doc
+        }
+      end
+      {"ok" => true, "messages" => msgs}
     end
 
     post do
-      payload = {"message" => params["message"]}
+      payload = {
+        "timestamp" => DateTime.now.iso8601,
+        "message" => params["message"]
+      }
       id = env.couchbase.incr("msgid", :initial => 1)
-      cas = env.couchbase.set("msg:#{id}", payload)
-      {"ok" => true, "cas" => cas}
+      id = "msg:#{id}"
+      cas = env.couchbase.set(id, payload)
+      {"ok" => true, "id" => id, "cas" => cas}
     end
   end
 
